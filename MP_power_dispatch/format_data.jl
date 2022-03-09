@@ -24,7 +24,8 @@ struct power_system_data
     gen_pmin::Vector{Float64}
     gen_qmax::Vector{Float64}
     gen_qmin::Vector{Float64}
-    gen_real_cost::Vector{Float64}
+    gen_c1::Vector{Float64}
+    gen_c2::Vector{Float64}
 
     baseMVA::Float64
 end
@@ -107,6 +108,6 @@ function input_matpower_data(bus_data, branch_data, gen_data, gencost_data, base
     gen = 1:num_gen
     network_data = power_system_data(bus_data.bus_i,bus_data.Bs,bus_data.Gs,bus_data.Pd,bus_data.Qd,bus_data.Vmax, bus_data.Vmin,
                             branches,tap_ratio,branch_shunt_suscep,branch_shunt_conduc,phase_angle,branch_resist,branch_react,branch_current_limit,
-                            gen,gen_data.bus,gen_data.Pmax,gen_data.Pmin, gen_data.Qmax, gen_data.Qmin, gencost_data.c1,baseMVA)
+                            gen,gen_data.bus,gen_data.Pmax,gen_data.Pmin, gen_data.Qmax, gen_data.Qmin, gencost_data.c1, gencost_data.c2, baseMVA)
     return network_data
 end

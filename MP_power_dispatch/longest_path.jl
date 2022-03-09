@@ -57,5 +57,5 @@ function MTZ_longest_path(network_data::power_system_data, startNode, endNode, t
     set_silent(lwpp)
     optimize!(lwpp)
 
-    return objective_value(lwpp)
+    return objective_value(lwpp), objective_bound(lwpp)
 end
