@@ -1,5 +1,7 @@
 using JuMP
 
+include("format_data.jl")
+
 function compute_line_susceptance_dc(data)
     b = Dict{Int64,Float64}()
     for (idx,n1,n2) in data.branches
@@ -61,52 +63,47 @@ function add_constr_dc_nodal_flow_balance(model, data)
             @constraint(model, sum(flow[(idx,n1,n2)] for (idx,n1,n2) in data.branches if n2 == b)
             - sum(flow[(idx,n1,n2)] for (idx,n1,n2) in data.branches if n1 == b)
             + sum(production[g] for g in data.gen if data.gen_bus[g] == b)
-            == data.bus_real_loads[b]
+            == data.bus_real_loads[b]/data.baseMVA
             )
         else
             @constraint(model, sum(flow[(idx,n1,n2)] for (idx,n1,n2) in data.branches if n2 == b)
             - sum(flow[(idx,n1,n2)] for (idx,n1,n2) in data.branches if n1 == b)
-            == data.bus_real_loads[b]
+            == data.bus_real_loads[b]/data.baseMVA
             )
         end
     end
     return model
 end
 
-
 function add_constr_dc_KVL(model,data, b)
     flow = model[:flow]
     volt_ang = model[:volt_ang]
-    @constraint(model, [(idx,n1,n2) in data.branches], flow[(idx,n1,n2)] + data.baseMVA*b[idx]*(volt_ang[n1] - volt_ang[n2]) == 0)
+    @constraint(model, [(idx,n1,n2) in data.branches], flow[(idx,n1,n2)] + b[idx]*(volt_ang[n1] - volt_ang[n2]) == 0)
     return model
 end
 
-function add_constr_dc_KVL_switch(model,data,b,bigM)
+function add_constr_dc_KVL_switch(model,data,b,bigM_plus,bigM_minus)
     flow = model[:flow]
     volt_ang = model[:volt_ang]
     branch_status = model[:branch_status]
-    for (idx, n1, n2) in data.branches
-        if bigM[idx] > 0
-            @constraint(model, flow[(idx,n1,n2)] + data.baseMVA*b[idx]*(volt_ang[n1] - volt_ang[n2]) <= bigM[idx]*(1-branch_status[(idx,n1,n2)]) ) # real power flow across each branch
-        else 
-            @constraint(model, flow[(idx,n1,n2)] <= 0)
-        end
-    end
-    @constraint(model, [(idx,n1,n2) in data.branches], flow[(idx,n1,n2)] + data.baseMVA*b[idx]*(volt_ang[n1] - volt_ang[n2]) >= -bigM[idx]*(1-branch_status[(idx,n1,n2)]) )
-    
+    @constraint(model, [(idx,n1,n2) in data.branches], flow[(idx,n1,n2)] + b[idx]*(volt_ang[n1] - volt_ang[n2]) 
+                                >= bigM_minus[idx]*(1-branch_status[(idx,n1,n2)]) )
+    @constraint(model, [(idx,n1,n2) in data.branches], flow[(idx,n1,n2)] + b[idx]*(volt_ang[n1] - volt_ang[n2]) 
+                                <= bigM_plus[idx]*(1-branch_status[(idx,n1,n2)]) )
     return model
 end
+
 
 function add_constr_dc_line_flow(model,data,b,ang_diff_limit)
     flow = model[:flow]
     for (idx,n1,n2) in data.branches
         if data.branch_current_limit[idx] > 0.01
-            @constraint(model, flow[(idx,n1,n2)] <= data.branch_current_limit[idx])
-            @constraint(model, flow[(idx,n1,n2)] >= -data.branch_current_limit[idx])
+            @constraint(model, flow[(idx,n1,n2)] <= data.branch_current_limit[idx]/data.baseMVA)
+            @constraint(model, flow[(idx,n1,n2)] >= -data.branch_current_limit[idx]/data.baseMVA)
         end
     end
-    @constraint(model, [(idx,n1,n2) in data.branches], flow[(idx,n1,n2)] <= -data.baseMVA*b[idx]*ang_diff_limit)
-    @constraint(model, [(idx,n1,n2) in data.branches], flow[(idx,n1,n2)] >= data.baseMVA*b[idx]*ang_diff_limit)
+    @constraint(model, [(idx,n1,n2) in data.branches], flow[(idx,n1,n2)] <= -b[idx]*ang_diff_limit)
+    @constraint(model, [(idx,n1,n2) in data.branches], flow[(idx,n1,n2)] >= b[idx]*ang_diff_limit)
     return model
 end
 
@@ -115,12 +112,12 @@ function add_constr_dc_line_flow_switch(model,data,b,ang_diff_limit)
     branch_status = model[:branch_status]
     for (idx,n1,n2) in data.branches
         if data.branch_current_limit[idx] > 0.01
-            @constraint(model, flow[(idx,n1,n2)] <= branch_status[(idx,n1,n2)] * data.branch_current_limit[idx])
-            @constraint(model, flow[(idx,n1,n2)] >= -branch_status[(idx,n1,n2)] * data.branch_current_limit[idx])
+            @constraint(model, flow[(idx,n1,n2)] <= branch_status[(idx,n1,n2)] * data.branch_current_limit[idx]/data.baseMVA)
+            @constraint(model, flow[(idx,n1,n2)] >= -branch_status[(idx,n1,n2)] * data.branch_current_limit[idx]/data.baseMVA)
         end
     end
-    @constraint(model, [(idx,n1,n2) in data.branches], flow[(idx,n1,n2)] <= -data.baseMVA*b[idx]*ang_diff_limit*branch_status[(idx,n1,n2)])
-    @constraint(model, [(idx,n1,n2) in data.branches], flow[(idx,n1,n2)] >= data.baseMVA*b[idx]*ang_diff_limit*branch_status[(idx,n1,n2)])
+    @constraint(model, [(idx,n1,n2) in data.branches], flow[(idx,n1,n2)] <= -b[idx]*ang_diff_limit*branch_status[(idx,n1,n2)])
+    @constraint(model, [(idx,n1,n2) in data.branches], flow[(idx,n1,n2)] >= b[idx]*ang_diff_limit*branch_status[(idx,n1,n2)])
     return model
 end
 
@@ -219,13 +216,13 @@ end
 #--------------------------------------------------------------------------------------------------------------------
 function add_obj_linear_prod_cost(model,data)
     production = model[:real_prod]
-    @objective(model, Min, sum(production[g]*data.gen_c1[g] for g in data.gen))
+    @objective(model, Min, 100*sum(production[g]*data.gen_c1[g] for g in data.gen))
     return model
 end
 
 function add_obj_quad_prod_cost(model,data)
     prod = model[:real_prod]
-    @objective(model, Min, sum(prod[g]*data.gen_c1[g] + prod[g]^2*data.gen_c2[g] for g in data.gen))
+    @objective(model, Min, 100*sum(prod[g]*data.gen_c1[g] + prod[g]^2*data.gen_c2[g] for g in data.gen))
     return model
 end
 #------------------------------------------------------------------------------------------------------------------
@@ -244,17 +241,17 @@ function build_DCOPF(data::power_system_data, ang_diff_limit)
     return model_dcopf
 end
 
-function build_DCOTS(data::power_system_data, ang_diff_limit, bigM)
+function build_DCOTS(data::power_system_data, ang_diff_limit, bigM_plus, bigM_minus)
     b = compute_line_susceptance_dc(data)
     model_dcots = Model();
     model_dcots = add_var_dc(model_dcots, data)
     model_dcots = add_var_switch(model_dcots, data)
     model_dcots = add_constr_real_gen_limit(model_dcots, data)
     model_dcots = add_constr_dc_nodal_flow_balance(model_dcots, data)
-    model_dcots = add_constr_dc_KVL_switch(model_dcots,data,b,bigM)
+    model_dcots = add_constr_dc_KVL_switch(model_dcots,data,b,bigM_plus,bigM_minus)
     model_dcots = add_constr_dc_line_flow_switch(model_dcots,data,b,ang_diff_limit)
     model_dcots = add_obj_linear_prod_cost(model_dcots,data)
-
+    
     return model_dcots
 end
 
