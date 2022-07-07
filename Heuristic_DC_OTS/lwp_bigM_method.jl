@@ -176,9 +176,9 @@ function compute_lwp_weights_MTZ(bus_data, branch_data, output_file, branch_rang
 end
 
 # OTS 
-function OTS(busData, branchData, generatorData, bigM, idx_unswitchable_lines, cardinality_limit, timeLimit, gap, relaxation)
-    myMod = Model( optimizer_with_attributes(Gurobi.Optimizer, "Seed" => 1, "TimeLimit" => timeLimit, "MIPGap" => gap) );
-    
+function OTS(busData, branchData, generatorData, bigM, idx_unswitchable_lines, cardinality_limit, relaxation, logFile; timeLimit = 60)
+    myMod = Model( optimizer_with_attributes(Gurobi.Optimizer, "Seed" => 1, "TimeLimit" => timeLimit) );
+    set_optimizer_attribute(myMod, "Logfile", logFile)
     power_demand = Dict{Int64, Float64}()
     for i in 1:length(busData.index)
         power_demand[busData.index[i]] = busData.demand[i]
@@ -297,25 +297,25 @@ end
 
 # if network == 1, use 118 bus data
 # if network == 2, use 300 bus data
-function OTS_lwp_bigM(network, input_lwp_results, load_scales, instances, branch_data, gen_data, cards, time_limit, gap, output_file)
+function OTS_lwp_bigM(network, input_lwp_results, load_scales, instances, branch_data, gen_data, cards, logFile)
     output_df = DataFrame(data_instance=String[],  card = [], sol_status=[], obj_val=[], obj_bound=[], gap=[], time=[], num_open=[])
     for load_scale in load_scales
         for i in instances
             # read the bus data
             if network == 1
-                bus_data = CSV.read("Data/118bus/para_tune_loads/load_factor_$(load_scale)_percent/Bus_Data_$i.csv")
+                bus_data = DataFrame(CSV.File("Heuristic_DC_OTS/Data/118bus_data//para_tune_loads/load_factor_$(load_scale)_percent/Bus_Data_$i.csv"))
                 instance = "IEEE118_P_$(load_scale)_$i"
             elseif network == 2
-                bus_data = CSV.read("Data/300bus/para_tune_loads/load_factor_$(load_scale)_percent/Bus_Data_$i.csv")
+                bus_data = DataFrame(CSV.File("Heuristic_DC_OTS/Data/300bus_data/para_tune_loads/load_factor_$(load_scale)_percent/Bus_Data_$i.csv"))
                 instance = "IEEE300_P_$(load_scale)_$i"
             end
             
             # read the big M values
-            max_angle_diff = input_lwp_results[2]
+            max_angle_diff = input_lwp_results[!,2]
             bigM = max_angle_diff ./ branch_data.reactance
             for card in cards
                 # run OTS model
-                results = OTS(bus_data, branch_data, gen_data, bigM, [], card, time_limit, gap, false)
+                results = OTS(bus_data, branch_data, gen_data, bigM, [], card, false, logFile)
 
                 # record the results    
                 output_row = []
@@ -328,7 +328,7 @@ function OTS_lwp_bigM(network, input_lwp_results, load_scales, instances, branch
             end
         end
     end
-    CSV.write(output_file, output_df)
+    return output_df
 end
 
 # An example of computing longest-path big-M values on tested instances
@@ -345,15 +345,31 @@ compute_lwp_weights_MTZ(bus_data, branch_data, output_file, branch_range, ksp_we
 
 # An example of solving DC OTS problem with longest-path big-M values on tested instances
 #----------------------------------------------------------------------------------------
+branch_data = DataFrame(CSV.File("Heuristic_DC_OTS/Data/118bus_data/Branch_Data_IEEE118_merged.csv"))
+gen_data = DataFrame(CSV.File("Heuristic_DC_OTS/Data/118bus_data/Generator_Data_IEEE118.csv"))
+lwp_weights_df = DataFrame(CSV.File("Heuristic_DC_OTS/results_118/Blumsack118_lwp_max_angle_diff.csv"))
 #=
-branch_data = DataFrame!(CSV.File("Data/300bus/IEEE300_branch_merged.csv"))
-gen_data = DataFrame!(CSV.File("Data/300bus/IEEE300_gen.csv"))
-ksp_weights = DataFrame!(CSV.File("merged_branch_300/ksp_weights.csv"))
-
-time_limit = 600
-MIP_gap = 0.001
-lwp_weights_df = DataFrame!(CSV.File("merged_branch_300/lwp_max_angle_diff.csv"))
-output_file = "merged_branch_300/OTS_lwp_para_tune.csv"
-OTS_lwp_bigM(2, lwp_weights_df, [95,100,105], 1:20, branch_data, gen_data, [45], time_limit, MIP_gap, output_file)
+output_file = "Heuristic_DC_OTS/results_118/Blumsack118_OTS_lwp_card_stl.csv"
+output_df = OTS_lwp_bigM(1, lwp_weights_df, [100], 1:20, branch_data, gen_data, [10,15,20,25])
+CSV.write(output_file, output_df)
 =#
+output_file = "Heuristic_DC_OTS/results_118/Blumsack118_OTS_lwp_para_tune_stl.csv"
+logFile = "Heuristic_DC_OTS/results_118/log_Blumsack118_OTS_lwp_card_stl.txt"
+output_df = OTS_lwp_bigM(1, lwp_weights_df, [95,100,105], 1:20, branch_data, gen_data, [45], logFile)
+CSV.write(output_file, output_df)
+
+branch_data = DataFrame(CSV.File("Heuristic_DC_OTS/Data/300bus_data/IEEE300_branch_merged.csv"))
+gen_data = DataFrame(CSV.File("Heuristic_DC_OTS/Data/300bus_data/IEEE300_gen.csv"))
+lwp_weights_df = DataFrame(CSV.File("Heuristic_DC_OTS/results_300/ieee300_lwp_max_angle_diff.csv"))
+
+output_file = "Heuristic_DC_OTS/results_300/ieee300_OTS_lwp_para_tune_stl.csv"
+logFile = "Heuristic_DC_OTS/results_300/log_ieee300_OTS_lwp_para_tune_stl.txt"
+output_df = OTS_lwp_bigM(2, lwp_weights_df, [95,100,105], 1:20, branch_data, gen_data, [45], logFile)
+CSV.write(output_file, output_df)
+
+output_file = "Heuristic_DC_OTS/results_300/ieee300_OTS_lwp_card_stl.csv"
+logFile = "Heuristic_DC_OTS/results_300/log_ieee300_OTS_lwp_card_stl.txt"
+output_df = OTS_lwp_bigM(2, lwp_weights_df, [100], 1:20, branch_data, gen_data, [10,15,20,25], logFile)
+CSV.write(output_file, output_df)
+
 #----------------------------------------------------------------------------------------

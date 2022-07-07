@@ -27,13 +27,10 @@ compute_ksp_k_val(1,false,load_factors,idx_load_factors,instances,branch_data,ge
 #------------------------------------------------------------------------------------------------------------------
 
 
-#=
+
 branch_data =  DataFrame(CSV.File("Data/300bus_data/IEEE300_branch_merged.csv"))
 gen_data = DataFrame(CSV.File("Data/300bus_data/IEEE300_gen.csv"))
 ksp_weights = DataFrame(CSV.File("results_300/ksp_weights.csv"))
-
-time_limit = 600
-MIP_gap = 0.001
 
 load_factors = [90,95,100,105,110]
 idx_load_factors = [3]
@@ -43,9 +40,9 @@ max_pathS = [15,20,25,30]
 max_edgeS = [5,7,9]
 conv_levelS = [5]
 output_file = "results_300/OTS_ksp_para_tuning_new.csv"
-output_df = OTS_ksp_bigM(2, load_factors, idx_load_factors, instances, card_limits, branch_data, gen_data, time_limit, MIP_gap, ksp_weights, max_pathS, max_edgeS, conv_levelS)
+output_df = OTS_ksp_bigM(2, load_factors, idx_load_factors, instances, card_limits, branch_data, gen_data, ksp_weights, max_pathS, max_edgeS, conv_levelS)
 CSV.write(output_file, output_df)
-=#
+
 
 # analyze optimality gaps
 #=
@@ -57,6 +54,8 @@ output_file = "results_118/analyze_opt_gap_ksp_118.csv"
 analyze_opt_gap(card_limits, num_instances, input_df, output_file)
 =#
 
+# Fuller heuristic
+#=
 fuller_input = DataFrame(CSV.File("results_300/OTS_fuller_heuristic_300.csv"))
 fuller_input = fuller_input[fuller_input.size_candi .== 2,:]
 lwp_input = DataFrame(CSV.File("results_300/OTS_lwp_paraTune_300.csv"))
@@ -65,3 +64,4 @@ lwp_load_factors = [95,100,105]
 output_df = analyze_fuller(2, fuller_input, lwp_input, load_factors, lwp_load_factors, 20)
 output_file = "results_300/fuller_compare_ksp_300.csv"
 CSV.write(output_file, output_df)
+=#

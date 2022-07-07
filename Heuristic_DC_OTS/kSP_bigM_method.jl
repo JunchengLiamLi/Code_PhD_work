@@ -233,9 +233,10 @@ function OPF(Bus_Data, Branch_Data, Generator_Data)
     end
 end
 
-function OTS(busData, branchData, generatorData, bigM, idx_unswitchable_lines, cardinality_limit, timeLimit, gap, relaxation)
-    myMod = Model( optimizer_with_attributes(Gurobi.Optimizer, "Seed" => 1, "TimeLimit" => timeLimit, "MIPGap" => gap) );
-    
+function OTS(busData, branchData, generatorData, bigM, idx_unswitchable_lines, cardinality_limit, relaxation, logFile; timeLimit = 60)
+    myMod = Model( optimizer_with_attributes(Gurobi.Optimizer, "Seed" => 1, "TimeLimit" => timeLimit) );
+    set_optimizer_attribute(myMod, "Logfile", logFile)
+
     power_demand = Dict{Int64, Float64}()
     for i in 1:length(busData.index)
         power_demand[busData.index[i]] = busData.demand[i]
@@ -764,11 +765,11 @@ end
 # run OTS model with k-shortest-path methods while reading k values that are already computed
 # if network == 1, use 118 bus data
 # if network == 2, use 300 bus data
-function OTS_ksp_bigM(network, load_factors, idx_load_factors, instances, card_limits, branch_data, gen_data, time_limit, MIP_gap, ksp_weights, max_pathS, max_edgeS, conv_levelS)
+function OTS_ksp_bigM(network, load_factors, idx_load_factors, instances, card_limits, branch_data, gen_data, ksp_weights, max_pathS, max_edgeS, conv_levelS, logFile)
     if network == 1
-        time_df = DataFrame(CSV.File("results_118/ksp_time.csv"))
+        time_df = DataFrame(CSV.File("Heuristic_DC_OTS/results_118/ksp_time.csv"))
     elseif network == 2
-        time_df = DataFrame(CSV.File("results_300/ksp_time.csv"))
+        time_df = DataFrame(CSV.File("Heuristic_DC_OTS/results_300/ksp_time.csv"))
     end
     output_df = DataFrame(data_instance=String[], card = [], max_path = [], max_edge = [], conv_level = [], 
                              sol_status=[], obj_val=[], obj_bound=[], gap=[], time=[], num_open=[])
@@ -776,10 +777,10 @@ function OTS_ksp_bigM(network, load_factors, idx_load_factors, instances, card_l
         for l in idx_load_factors, i in instances
             # read the data
             if network == 1
-                data_file = "Data/118bus_data/para_tune_loads/load_factor_$(load_factors[l])_percent/Bus_Data_$i.csv"
+                data_file = "Heuristic_DC_OTS/Data/118bus_data/para_tune_loads/load_factor_$(load_factors[l])_percent/Bus_Data_$i.csv"
                 instance = "IEEE118_P_$(load_factors[l]/100)_$i"
             elseif network == 2
-                data_file = "Data/300bus_data/para_tune_loads/load_factor_$(load_factors[l])_percent/Bus_Data_$i.csv"
+                data_file = "Heuristic_DC_OTS/Data/300bus_data/para_tune_loads/load_factor_$(load_factors[l])_percent/Bus_Data_$i.csv"
                 instance = "IEEE300_P_$(load_factors[l]/100)_$i"
             end
 
@@ -787,9 +788,9 @@ function OTS_ksp_bigM(network, load_factors, idx_load_factors, instances, card_l
  
             # read big M values
             if network == 1
-                k_val_file = "results_118/ksp_k_values/load_$(load_factors[l])_percent_instance_$(i).csv"               
+                k_val_file = "Heuristic_DC_OTS/results_118/ksp_k_values/load_$(load_factors[l])_percent_instance_$(i).csv"               
             elseif network == 2
-                k_val_file = "results_300/ksp_k_values/load_$(load_factors[l])_percent_instance_$(i).csv"
+                k_val_file = "Heuristic_DC_OTS/results_300/ksp_k_values/load_$(load_factors[l])_percent_instance_$(i).csv"
             end
 
             k_val_df = DataFrame(CSV.File(k_val_file))
@@ -817,7 +818,7 @@ function OTS_ksp_bigM(network, load_factors, idx_load_factors, instances, card_l
     
             # run OTS
             for card in card_limits
-                results = OTS(new_bus_data, branch_data, gen_data, bigM, [], card, time_limit, MIP_gap, false)
+                results = OTS(new_bus_data, branch_data, gen_data, bigM, [], card, false, logFile)
                 output_row = []
                 push!(output_row, instance)
                 push!(output_row, card)
@@ -881,23 +882,84 @@ compute_ksp_k_val(2,false,load_factors,idx_load_factors,instances,branch_data,ge
 
 # An example of run DC OTS model with k-shortest-path "big-M" values on tested instances
 #--------------------------------------------------------------------------------------
-#=
-branch_data =  DataFrame!(CSV.File("Data/300bus/IEEE300_branch_merged.csv"))
-gen_data = DataFrame!(CSV.File("Data/300bus/IEEE300_gen.csv"))
-ksp_weights = DataFrame!(CSV.File("merged_branch_300/ksp_weights.csv"))
-
-time_limit = 600
-MIP_gap = 0.001
+branch_data = DataFrame(CSV.File("Heuristic_DC_OTS/Data/118bus_data/Branch_Data_IEEE118_merged.csv"))
+gen_data = DataFrame(CSV.File("Heuristic_DC_OTS/Data/118bus_data/Generator_Data_IEEE118.csv"))
+ksp_weights = DataFrame(CSV.File("Heuristic_DC_OTS/results_118/Blumsack118_ksp_weights.csv"))
 
 load_factors = [90,95,100,105,110]
-idx_load_factors = [3]
 instances = 1:20
+
+idx_load_factors = [3]
+card_limits = [10,15,20,25]
+max_pathS = [11]
+max_edgeS = [5]
+conv_levelS = [1]
+output_file = "Heuristic_DC_OTS/results_118/Blumsack118_OTS_ksp_card_stl.csv"
+logFile = "Heuristic_DC_OTS/results_118/log_Blumsack118_OTS_ksp_card_stl.txt"
+output_df = OTS_ksp_bigM(1, load_factors, idx_load_factors, instances, card_limits, branch_data, gen_data, ksp_weights, max_pathS, max_edgeS, conv_levelS, logFile)
+CSV.write(output_file, output_df)
+
+idx_load_factors = [2]
+card_limits = [45]
+max_pathS = [14]
+max_edgeS = [5]
+conv_levelS = [1]
+output_file = "Heuristic_DC_OTS/results_118/Blumsack118_OTS_ksp_para_tune1_stl.csv"
+logFile = "Heuristic_DC_OTS/results_118/log_Blumsack118_OTS_ksp_para_tune1_stl.txt"
+output_df = OTS_ksp_bigM(1, load_factors, idx_load_factors, instances, card_limits, branch_data, gen_data, ksp_weights, max_pathS, max_edgeS, conv_levelS, logFile)
+CSV.write(output_file, output_df)
+
+idx_load_factors = [3,4]
+card_limits = [45]
+max_pathS = [11]
+max_edgeS = [5]
+conv_levelS = [1]
+output_file = "Heuristic_DC_OTS/results_118/Blumsack118_OTS_ksp_para_tune2_stl.csv"
+logFile = "Heuristic_DC_OTS/results_118/log_Blumsack118_OTS_ksp_para_tune2_stl.txt"
+output_df = OTS_ksp_bigM(1, load_factors, idx_load_factors, instances, card_limits, branch_data, gen_data, ksp_weights, max_pathS, max_edgeS, conv_levelS, logFile)
+CSV.write(output_file, output_df)
+
+branch_data = DataFrame(CSV.File("Heuristic_DC_OTS/Data/300bus_data/IEEE300_branch_merged.csv"))
+gen_data = DataFrame(CSV.File("Heuristic_DC_OTS/Data/300bus_data/IEEE300_gen.csv"))
+ksp_weights = DataFrame(CSV.File("Heuristic_DC_OTS/results_300/ieee300_ksp_weights.csv"))
+
+idx_load_factors = [3]
 card_limits = [10,15,20,25]
 max_pathS = [15]
-max_edgeS = [5]
-conv_levelS = [3]
-output_file = "merged_branch_300/OTS_ksp_card.csv"
-output_df = OTS_ksp_bigM(2, load_factors, idx_load_factors, instances, card_limits, branch_data, gen_data, time_limit, MIP_gap, ksp_weights, max_pathS, max_edgeS, conv_levelS)
+max_edgeS = [7]
+conv_levelS = [5]
+output_file = "Heuristic_DC_OTS/results_300/ieee300_OTS_ksp_card_stl.csv"
+logFile = "Heuristic_DC_OTS/results_300/log_ieee300_OTS_ksp_card_stl.txt"
+output_df = OTS_ksp_bigM(2, load_factors, idx_load_factors, instances, card_limits, branch_data, gen_data, ksp_weights, max_pathS, max_edgeS, conv_levelS, logFile)
 CSV.write(output_file, output_df)
-=#
+
+idx_load_factors = [2]
+card_limits = [45]
+max_pathS = [25]
+max_edgeS = [9]
+conv_levelS = [0]
+output_file = "Heuristic_DC_OTS/results_300/ieee300_OTS_ksp_para_tune1_stl.csv"
+logFile = "Heuristic_DC_OTS/results_300/log_ieee300_OTS_ksp_para_tune1_stl.txt"
+output_df = OTS_ksp_bigM(2, load_factors, idx_load_factors, instances, card_limits, branch_data, gen_data, ksp_weights, max_pathS, max_edgeS, conv_levelS, logFile)
+CSV.write(output_file, output_df)
+
+idx_load_factors = [3]
+card_limits = [45]
+max_pathS = [15]
+max_edgeS = [7]
+conv_levelS = [5]
+output_file = "Heuristic_DC_OTS/results_300/ieee300_OTS_ksp_para_tune2_stl.csv"
+logFile = "Heuristic_DC_OTS/results_300/log_ieee300_OTS_ksp_para_tune2_stl.txt"
+output_df = OTS_ksp_bigM(2, load_factors, idx_load_factors, instances, card_limits, branch_data, gen_data, ksp_weights, max_pathS, max_edgeS, conv_levelS, logFile)
+CSV.write(output_file, output_df)
+
+idx_load_factors = [4]
+card_limits = [45]
+max_pathS = [15]
+max_edgeS = [5]
+conv_levelS = [4]
+output_file = "Heuristic_DC_OTS/results_300/ieee300_OTS_ksp_para_tune3_stl.csv"
+logFile = "Heuristic_DC_OTS/results_300/log_ieee300_OTS_ksp_para_tune3_stl.txt"
+output_df = OTS_ksp_bigM(2, load_factors, idx_load_factors, instances, card_limits, branch_data, gen_data, ksp_weights, max_pathS, max_edgeS, conv_levelS, logFile)
+CSV.write(output_file, output_df)
 #--------------------------------------------------------------------------------------

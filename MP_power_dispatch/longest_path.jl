@@ -1,6 +1,7 @@
 using JuMP, Gurobi
 
-function MTZ_longest_path(network_data::power_system_data, startNode, endNode, time_limit, gap)
+using JuMP, Gurobi
+function build_MTZ_longest_path(network_data::power_system_data, startNode, endNode, time_limit; gap = 0.005)
     lwpp = Model(optimizer_with_attributes(Gurobi.Optimizer, "TimeLimit" => time_limit, "MIPGap" => gap))
     nodes = network_data.buses
     edges = Vector{Tuple{Int64,Int64}}()
@@ -54,8 +55,19 @@ function MTZ_longest_path(network_data::power_system_data, startNode, endNode, t
     @constraint(lwpp, [n1 in remaining_nodes, n2 in remaining_nodes; n1 ≠ n2], (num_nodes-1)*x[n1,n2] + u[n1] - u[n2] <= num_nodes-2 )
     
     @objective(lwpp, Max, sum(x[fromNode,toNode] + x[toNode,fromNode] for (fromNode, toNode) in edges) )
-    set_silent(lwpp)
-    optimize!(lwpp)
+    
+    return lwpp
+end
 
-    return objective_value(lwpp), objective_bound(lwpp)
+function compute_longest_paths(input_file::String, time_limit)
+    bus_df,br_df,gen_df,gencost_df = convert_m_file_to_dataframes(input_file)
+    case = convert_df_to_power_system_data(bus_df,br_df,gen_df,gencost_df, 100);
+    long_paths = Vector{Float64}(undef, length(case.branches))
+    for (i, n1 ,n2) in case.branches
+        MTZ_case = build_MTZ_longest_path(case, n1, n2, time_limit)
+        set_silent(MTZ_case)
+        optimize!(MTZ_case)
+        long_paths[i] = objective_value(MTZ_case)
+    end
+    return long_paths
 end
